@@ -83,14 +83,15 @@ class DetectNet(metaclass=ABCMeta):
 class YOLO(DetectNet):
     """YOLO class"""
 
-    def __init__(self, input_shape, num_classes, grid_size=13, num_anchors=5, **kwargs):
+    def __init__(self, input_shape, num_classes, anchors, grid_size=13, **kwargs):
 
         self.y = tf.placeholder(tf.float32, [None] +
                                 [grid_size, grid_size, num_anchors, 5 + num_classes])
         self.grid_size = gird_size
-        self.num_anchors = num_anchors
+        self.num_anchors = len(anchors)
+        self.anchors = anchors
         cxcy = np.transpose([np.tile(np.arange(self.grid_size), self.grid_size),
-			np.repeat(np.arange(self.grid_size), self.grid_size)])
+                             np.repeat(np.arange(self.grid_size), self.grid_size)])
         self.cxcy = np.reshape(cxcy, (1, self.grid_size, self.grid_size, 1, 2))
         super(YOLO, self).__init__(input_shape, num_classes, **kwargs)
 
@@ -110,221 +111,220 @@ class YOLO(DetectNet):
         is_train = tf.placeholder(tf.bool)
 
         #conv1 - batch_norm1 - leaky_relu1 - pool1
-        with tf.variable_scope('conv1'):
+        with tf.variable_scope('layer1'):
             d['conv1'] = conv_layer(X_input, 3, 1, 32,
                                     padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv1.shape', d['conv1'].get_shape().as_list())
-        d['batch_norm1'] = batchNormalization(d['conv1'], is_train)
-        d['leaky_relu1'] = tf.nn.leaky_relu(d['batch_norm1'], alpha=0.1)
-        d['pool1'] = max_pool(d['leaky_relu1'], 2, 2, padding='SAME')
+            d['batch_norm1'] = batchNormalization(d['conv1'], is_train)
+            d['leaky_relu1'] = tf.nn.leaky_relu(d['batch_norm1'], alpha=0.1)
+            d['pool1'] = max_pool(d['leaky_relu1'], 2, 2, padding='SAME')
         # (416, 416, 3) --> (208, 208, 32)
-        print('pool1.shape', d['pool1'].get_shape().as_list())
+        print('layer1.shape', d['pool1'].get_shape().as_list())
 
         #conv2 - batch_norm2 - leaky_relu2 - pool2
-        with tf.variable_scope('conv2'):
+        with tf.variable_scope('layer2'):
             d['conv2'] = conv_layer(d['pool1'], 3, 1, 64,
                                     padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv2.shape', d['conv2'].get_shape().as_list())
-
-        d['batch_norm2'] = batchNormalization(d['conv2'], is_train)
-        d['leaky_relu2'] = tf.nn.leaky_relu(d['batch_norm2'], alpha=0.1)
-        d['pool2'] = max_pool(d['leaky_relu2'], 2, 2, padding='SAME')
+            d['batch_norm2'] = batchNormalization(d['conv2'], is_train)
+            d['leaky_relu2'] = tf.nn.leaky_relu(d['batch_norm2'], alpha=0.1)
+            d['pool2'] = max_pool(d['leaky_relu2'], 2, 2, padding='SAME')
         # (208, 208, 32) --> (104, 104, 64)
-        print('pool2.shape', d['pool2'].get_shape().as_list())
+        print('layer2.shape', d['pool2'].get_shape().as_list())
 
         #conv3 - batch_norm3 - leaky_relu3
-        with tf.variable_scope('conv3'):
+        with tf.variable_scope('layer3'):
             d['conv3'] = conv_layer(d['pool2'], 3, 1, 128,
                                     padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv3.shape', d['conv3'].get_shape().as_list())
-                d['batch_norm3'] = batchNormalization(d['conv3'], is_train)
-        d['leaky_relu3'] = tf.nn.leaky_relu(d['batch_norm3'], alpha=0.1)
+            d['batch_norm3'] = batchNormalization(d['conv3'], is_train)
+            d['leaky_relu3'] = tf.nn.leaky_relu(d['batch_norm3'], alpha=0.1)
         # (104, 104, 64) --> (104, 104, 128)
+        print('layer3.shape', d['leaky_relu3'].get_shape().as_list())
 
         #conv4 - batch_norm4 - leaky_relu4
-        with tf.variable_scope('conv4'):
+        with tf.variable_scope('layer4'):
             d['conv4'] = conv_layer(d['leaky_relu3'], 1, 1, 64,
                                     padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv4.shape', d['conv4'].get_shape().as_list())
-                d['batch_norm4'] = batchNormalization(d['conv4'], is_train)
-        d['leaky_relu4'] = tf.nn.leaky_relu(d['conv4'], alpha=0.1)
+            d['batch_norm4'] = batchNormalization(d['conv4'], is_train)
+            d['leaky_relu4'] = tf.nn.leaky_relu(d['conv4'], alpha=0.1)
         # (104, 104, 128) --> (104, 104, 64)
+        print('layer4.shape', d['leaky_relu4'].get_shape().as_list())
 
         #conv5 - batch_norm5 - leaky_relu5 - pool5
-        with tf.variable_scope('conv5'):
+        with tf.variable_scope('layer5'):
             d['conv5'] = conv_layer(d['leaky_relu4'], 3, 1, 128,
                                     padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv5.shape', d['conv5'].get_shape().as_list())
-                d['batch_norm5'] = batchNormalization(d['conv5'], is_train)
-        d['leaky_relu5'] = tf.nn.leaky_relu(d['batch_norm5'], alpha=0.1)
-        d['pool5'] = max_pool(d['leaky_relu5'], 2, 2, padding='SAME')
+            d['batch_norm5'] = batchNormalization(d['conv5'], is_train)
+            d['leaky_relu5'] = tf.nn.leaky_relu(d['batch_norm5'], alpha=0.1)
+            d['pool5'] = max_pool(d['leaky_relu5'], 2, 2, padding='SAME')
         # (104, 104, 64) --> (52, 52, 128)
-        print('pool5.shape', d['pool5'].get_shape().as_list())
+        print('layer5.shape', d['pool5'].get_shape().as_list())
 
         #conv6 - batch_norm6 - leaky_relu6
-        with tf.variable_scope('conv6'):
+        with tf.variable_scope('layer6'):
             d['conv6'] = conv_layer(d['pool5'], 3, 1, 256,
                                     padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv6.shape', d['conv6'].get_shape().as_list())
-                d['batch_norm6'] = batchNormalization(d['conv6'], is_train)
-        d['leaky_relu6'] = tf.nn.leaky_relu(d['batch_norm6'], alpha=0.1)
+            d['batch_norm6'] = batchNormalization(d['conv6'], is_train)
+            d['leaky_relu6'] = tf.nn.leaky_relu(d['batch_norm6'], alpha=0.1)
         # (52, 52, 128) --> (52, 52, 256)
+        print('layer6.shape', d['leaky_relu6'].get_shape().as_list())
 
         #conv7 - batch_norm7 - leaky_relu7
-        with tf.variable_scope('conv7'):
+        with tf.variable_scope('layer7'):
             d['conv7'] = conv_layer(d['leaky_relu6'], 1, 1, 128,
                                     padding='SAME', weights_stddev=0.01, biases_value=0.0)
-            print('conv7.shape', d['conv7'].get_shape().as_list())
-                d['batch_norm7'] = batchNormalization(d['conv7'], is_train)
-        d['leaky_relu7'] = tf.nn.leaky_relu(d['batch_norm7'], alpha=0.1)
+            d['batch_norm7'] = batchNormalization(d['conv7'], is_train)
+            d['leaky_relu7'] = tf.nn.leaky_relu(d['batch_norm7'], alpha=0.1)
         # (52, 52, 256) --> (52, 52, 128)
+        print('layer7.shape', d['leaky_relu7'].get_shape().as_list())
 
         #conv8 - batch_norm8 - leaky_relu8 - pool8
-        with tf.variable_scope('conv8'):
+        with tf.variable_scope('layer8'):
             d['conv8'] = conv_layer(d['leaky_relu7'], 3, 1, 256,
                                     padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv8.shape', d['conv8'].get_shape().as_list())
-                d['batch_norm8'] = batchNormalization(d['conv8'], is_train)
-        d['leaky_relu8'] = tf.nn.leaky_relu(d['batch_norm8'], alpha=0.1)
-        d['pool8'] = max_pool(d['leaky_relu8'], 2, 2, padding='SAME')
+            d['batch_norm8'] = batchNormalization(d['conv8'], is_train)
+            d['leaky_relu8'] = tf.nn.leaky_relu(d['batch_norm8'], alpha=0.1)
+            d['pool8'] = max_pool(d['leaky_relu8'], 2, 2, padding='SAME')
         # (52, 52, 128) --> (26, 26, 256)
-        print('pool8.shape', d['pool8'].get_shape().as_list())
+        print('layer8.shape', d['pool8'].get_shape().as_list())
 
         #conv9 - batch_norm9 - leaky_relu9
-        with tf.variable_scope('conv9'):
+        with tf.variable_scope('layer9'):
             d['conv9'] = conv_layer(d['pool8'], 3, 1, 512,
                                     padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv9.shape', d['conv9'].get_shape().as_list())
-                d['batch_norm9'] = batchNormalization(d['conv9'], is_train)
-        d['leaky_relu9'] = tf.nn.leaky_relu(d['batch_norm9'], alpha=0.1)
+            d['batch_norm9'] = batchNormalization(d['conv9'], is_train)
+            d['leaky_relu9'] = tf.nn.leaky_relu(d['batch_norm9'], alpha=0.1)
         # (26, 26, 256) --> (26, 26, 512)
+        print('layer9.shape', d['leaky_relu9'].get_shape().as_list())
 
         #conv10 - batch_norm10 - leaky_relu10
-        with tf.variable_scope('conv10'):
+        with tf.variable_scope('layer10'):
             d['conv10'] = conv_layer(d['leaky_relu9'], 1, 1, 256,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv10.shape', d['conv10'].get_shape().as_list())
-                d['batch_norm10'] = batchNormalization(d['conv10'], is_train)
-        d['leaky_relu10'] = tf.nn.leaky_relu(d['batch_norm10'], alpha=0.1)
+            d['batch_norm10'] = batchNormalization(d['conv10'], is_train)
+            d['leaky_relu10'] = tf.nn.leaky_relu(d['batch_norm10'], alpha=0.1)
         # (26, 26, 512) --> (26, 26, 256)
+        print('layer10.shape', d['leaky_relu10'].get_shape().as_list())
 
         #conv11 - batch_norm11 - leaky_relu11
-        with tf.variable_scope('conv11'):
+        with tf.variable_scope('layer11'):
             d['conv11'] = conv_layer(d['leaky_relu10'], 3, 1, 512,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv11.shape', d['conv11'].get_shape().as_list())
-                d['batch_norm11'] = batchNormalization(d['conv11'], is_train)
-        d['leaky_relu11'] = tf.nn.leaky_relu(d['batch_norm11'], alpha=0.1)
+            d['batch_norm11'] = batchNormalization(d['conv11'], is_train)
+            d['leaky_relu11'] = tf.nn.leaky_relu(d['batch_norm11'], alpha=0.1)
         # (26, 26, 256) --> (26, 26, 512)
+        print('layer11.shape', d['leaky_relu11'].get_shape().as_list())
 
         #conv12 - batch_norm12 - leaky_relu12
-        with tf.variable_scope('conv12'):
+        with tf.variable_scope('layer12'):
             d['conv12'] = conv_layer(d['leaky_relu11'], 1, 1, 256,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv12.shape', d['conv12'].get_shape().as_list())
-                d['batch_norm12'] = batchNormalization(d['conv12'], is_train)
-        d['leaky_relu12'] = tf.nn.leaky_relu(d['batch_norm12'], alpha=0.1)
+            d['batch_norm12'] = batchNormalization(d['conv12'], is_train)
+            d['leaky_relu12'] = tf.nn.leaky_relu(d['batch_norm12'], alpha=0.1)
         # (26, 26, 512) --> (26, 26, 256)
+        print('layer12.shape', d['leaky_relu12'].get_shape().as_list())
 
         #conv13 - batch_norm13 - leaky_relu13 - pool13
-        with tf.variable_scope('conv13'):
+        with tf.variable_scope('layer13'):
             d['conv13'] = conv_layer(d['leaky_relu12'], 3, 1, 512,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv13.shape', d['conv13'].get_shape().as_list())
-                d['batch_norm13'] = batchNormalization(d['conv13'], is_train)
-        d['leaky_relu13'] = tf.nn.leaky_relu(d['batch_norm13'], alpha=0.1)
-        d['pool13'] = max_pool(d['leaky_relu13'], 2, 2, padding='SAME')
-        print('pool13.shape', d['pool13'].get_shape().as_list())
+            d['batch_norm13'] = batchNormalization(d['conv13'], is_train)
+            d['leaky_relu13'] = tf.nn.leaky_relu(d['batch_norm13'], alpha=0.1)
+            d['pool13'] = max_pool(d['leaky_relu13'], 2, 2, padding='SAME')
         # (26, 26, 256) --> (13, 13, 512)
+        print('pool13.shape', d['pool13'].get_shape().as_list())
 
         #conv14 - batch_norm14 - leaky_relu14
-        with tf.variable_scope('conv14'):
+        with tf.variable_scope('layer14'):
             d['conv14'] = conv_layer(d['pool13'], 3, 1, 1024,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv14.shape', d['conv14'].get_shape().as_list())
-                d['batch_norm14'] = batchNormalization(d['conv14'], is_train)
-        d['leaky_relu14'] = tf.nn.leaky_relu(d['batch_norm14'], alpha=0.1)
+            d['batch_norm14'] = batchNormalization(d['conv14'], is_train)
+            d['leaky_relu14'] = tf.nn.leaky_relu(d['batch_norm14'], alpha=0.1)
         # (13, 13, 512) --> (13, 13, 1024)
+        print('layer14.shape', d['leaky_relu14'].get_shape().as_list())
 
         #conv15 - batch_norm15 - leaky_relu15
-        with tf.variable_scope('conv15'):
+        with tf.variable_scope('layer15'):
             d['conv15'] = conv_layer(d['leaky_relu14'], 1, 1, 512,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv15.shape', d['conv15'].get_shape().as_list())
-                d['batch_norm15'] = batchNormalization(d['conv15'], is_train)
-        d['leaky_relu15'] = tf.nn.leaky_relu(d['batch_norm15'], alpha=0.1)
+            d['batch_norm15'] = batchNormalization(d['conv15'], is_train)
+            d['leaky_relu15'] = tf.nn.leaky_relu(d['batch_norm15'], alpha=0.1)
         # (13, 13, 1024) --> (13, 13, 512)
+        print('layer15.shape', d['leaky_relu15'].get_shape().as_list())
 
         #conv16 - batch_norm16 - leaky_relu16
-        with tf.variable_scope('conv16'):
+        with tf.variable_scope('layer16'):
             d['conv16'] = conv_layer(d['leaky_relu15'], 3, 1, 1024,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv16.shape', d['conv16'].get_shape().as_list())
-                d['batch_norm16'] = batchNormalization(d['conv16'], is_train)
-        d['leaky_relu16'] = tf.nn.leaky_relu(d['batch_norm16'], alpha=0.1)
+            d['batch_norm16'] = batchNormalization(d['conv16'], is_train)
+            d['leaky_relu16'] = tf.nn.leaky_relu(d['batch_norm16'], alpha=0.1)
         # (13, 13, 512) --> (13, 13, 1024)
+        print('layer16.shape', d['leaky_relu16'].get_shape().as_list())
 
         #conv17 - batch_norm16 - leaky_relu17
-        with tf.variable_scope('conv17'):
+        with tf.variable_scope('layer17'):
             d['conv17'] = conv_layer(d['leaky_relu16'], 1, 1, 512,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv17.shape', d['conv17'].get_shape().as_list())
-                d['batch_norm17'] = batchNormalization(d['conv17'], is_train)
-        d['leaky_relu17'] = tf.nn.leaky_relu(d['batch_norm17'], alpha=0.1)
+            d['batch_norm17'] = batchNormalization(d['conv17'], is_train)
+            d['leaky_relu17'] = tf.nn.leaky_relu(d['batch_norm17'], alpha=0.1)
         # (13, 13, 1024) --> (13, 13, 512)
+        print('layer17.shape', d['leaky_relu17'].get_shape().as_list())
 
         #conv18 - batch_norm18 - leaky_relu18
-        with tf.variable_scope('conv18'):
+        with tf.variable_scope('layer18'):
             d['conv18'] = conv_layer(d['leaky_relu17'], 3, 1, 1024,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv18.shape', d['conv18'].get_shape().as_list())
-                d['batch_norm18'] = batchNormalization(d['conv18'], is_train)
-        d['leaky_relu18'] = tf.nn.leaky_relu(d['batch_norm18'], alpha=0.1)
+            d['batch_norm18'] = batchNormalization(d['conv18'], is_train)
+            d['leaky_relu18'] = tf.nn.leaky_relu(d['batch_norm18'], alpha=0.1)
         # (13, 13, 512) --> (13, 13, 1024)
+        print('layer18.shape', d['leaky_relu18'].get_shape().as_list())
 
         #conv19 - batch_norm19 - leaky_relu19
-        with tf.variable_scope('conv19'):
+        with tf.variable_scope('layer19'):
             d['conv19'] = conv_layer(d['leaky_relu18'], 3, 1, 1024,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv19.shape', d['conv19'].get_shape().as_list())
-                d['batch_norm19'] = batchNormalization(d['conv19'], is_train)
-        d['leaky_relu19'] = tf.nn.leaky_relu(d['batch_norm19'], alpha=0.1)
+            d['batch_norm19'] = batchNormalization(d['conv19'], is_train)
+            d['leaky_relu19'] = tf.nn.leaky_relu(d['batch_norm19'], alpha=0.1)
         # (13, 13, 1024) --> (13, 13, 1024)
+        print('layer19.shape', d['leaky_relu19'].get_shape().as_list())
 
         #conv20 - batch_norm20 - leaky_relu20
-        with tf.variable_scope('conv20'):
+        with tf.variable_scope('layer20'):
             d['conv20'] = conv_layer(d['leaky_relu19'], 3, 1, 1024,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv20.shape', d['conv20'].get_shape().as_list())
-                d['batch_norm20'] = batchNormalization(d['conv20'], is_train)
-        d['leaky_relu20'] = tf.nn.leaky_relu(d['batch_norm20'], alpha=0.1)
+            d['batch_norm20'] = batchNormalization(d['conv20'], is_train)
+            d['leaky_relu20'] = tf.nn.leaky_relu(d['batch_norm20'], alpha=0.1)
         # (13, 13, 1024) --> (13, 13, 1024)
+        print('layer20.shape', d['leaky_relu20'].get_shape().as_list())
 
         # concatenate layer21 and layer 13 using space to depth
-        d['skip_connection'] = conv_layer(d['leaky_relu13'], 1, 1, 64,
-                                          padding='SAME', use_bias=False, weights_stddev=0.01)
-        d['skip_batch'] = batchNormalization(d['skip_connection'], is_train)
-        d['skip_leaky_relu'] = tf.nn.leaky_relu(d['skip_batch'], alpha=0.1)
-        d['skip_space_to_depth_x2'] = tf.space_to_depth(
-            d['skip_leaky_relu'], block_size=2)
-        d['concat21'] = tf.concat(
-            [d['skip_space_to_depth_x2'], d['leaky_relu21']], axis=-1)
+        with tf.variable_scope('layer21'):
+            d['skip_connection'] = conv_layer(d['leaky_relu13'], 1, 1, 64,
+                                              padding='SAME', use_bias=False, weights_stddev=0.01)
+            d['skip_batch'] = batchNormalization(
+                d['skip_connection'], is_train)
+            d['skip_leaky_relu'] = tf.nn.leaky_relu(d['skip_batch'], alpha=0.1)
+            d['skip_space_to_depth_x2'] = tf.space_to_depth(
+                d['skip_leaky_relu'], block_size=2)
+            d['concat21'] = tf.concat(
+                [d['skip_space_to_depth_x2'], d['leaky_relu20']], axis=-1)
         # (13, 13, 1024) --> (13, 13, 256+1024)
+        print('layer21.shape', d['concat21'].get_shape().as_list())
 
         #conv22 - leaky_relu22
-        with tf.variable_scope('conv22'):
-            d['conv22'] = conv_layer(d['leaky_relu21'], 3, 1, 1024,
+        with tf.variable_scope('layer22'):
+            d['conv22'] = conv_layer(d['concat21'], 3, 1, 1024,
                                      padding='SAME', use_bias=False, weights_stddev=0.01)
-            print('conv22.shape', d['conv22'].get_shape().as_list())
-                d['batch_norm22'] = batchNormalization(d['conv22'], is_train)
-        d['leaky_relu22'] = tf.nn.leaky_relu(d['batch_norm22'], alpha=0.1)
+            d['batch_norm22'] = batchNormalization(d['conv22'], is_train)
+            d['leaky_relu22'] = tf.nn.leaky_relu(d['batch_norm22'], alpha=0.1)
         # (13, 13, 1280) --> (13, 13, 1024)
+        print('layer22.shape', d['leaky_relu22'].get_shape().as_list())
 
         output_channel = self.num_anchors * (5 + self.num_classes)
-        d['pred'] = conv_layer(d['leaky_relu22'], 1, 1, output_channel,
-                               padding='SAME', use_bias=True, weights_stddev=0.01, biases_value=0.1)
+        d['logit'] = conv_layer(d['leaky_relu22'], 1, 1, output_channel,
+                                padding='SAME', use_bias=True, weights_stddev=0.01, biases_value=0.1)
+        d['pred'] = tf.reshape(
+            d['logit'], (-1, self.grid_size, self.grid_size, self.num_anchors, 5 + self.num_classes))
         print('pred.shape', d['pred'].get_shape().as_list())
-        # (13, 13, 1024) --> (13, 13, num_anchors * (5 + num_classes))
+        # (13, 13, 1024) --> (13, 13, num_anchors , (5 + num_classes))
 
         return d
 
@@ -338,8 +338,13 @@ class YOLO(DetectNet):
 
         scale = kwargs.pop('scale', [5, 5, 5, 0.5, 1.0])
 
-        # Prepare parameters
+        txty, twth = self.pred[..., 0:2], self.pred[..., 2:4]
+        confidence = tf.sigmoid(self.pred[..., 4:5])
+        class_probs = tf.softmax(self.pred[..., 5:], axis=-1) if num_classes > 1 else tf.sigmoid(self.pred[..., 5:])
+        bxby = tf.sigmoid(txty) + self.cxcy
+        bwbh =
 
+        # Prepare parameters
 
         return total_loss
 
