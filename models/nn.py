@@ -65,7 +65,7 @@ class DetectNet(metaclass=ABCMeta):
                 _batch_size, shuffle=False, is_train=False)
 
             # Compute predictions
-            # (N, Cell, Cell, 5 + num_classes)
+            # (N, grid_h, grid_w, 5 + num_classes)
             y_pred = sess.run(self.pred, feed_dict={
                               self.X: X, self.is_train: False})
 
@@ -83,16 +83,14 @@ class DetectNet(metaclass=ABCMeta):
 class YOLO(DetectNet):
     """YOLO class"""
 
-    def __init__(self, input_shape, num_classes, anchors, grid_size=13, **kwargs):
+    def __init__(self, input_shape, num_classes, anchors, grid_size=(13, 13), **kwargs):
 
+        self.is_train = tf.placeholder(tf.bool)
         self.y = tf.placeholder(tf.float32, [None] +
                                 [grid_size, grid_size, num_anchors, 5 + num_classes])
         self.grid_size = gird_size
         self.num_anchors = len(anchors)
         self.anchors = anchors
-        cxcy = np.transpose([np.tile(np.arange(self.grid_size), self.grid_size),
-                             np.repeat(np.arange(self.grid_size), self.grid_size)])
-        self.cxcy = np.reshape(cxcy, (1, self.grid_size, self.grid_size, 1, 2))
         super(YOLO, self).__init__(input_shape, num_classes, **kwargs)
 
     def _build_model(self, **kwargs):
@@ -108,7 +106,7 @@ class YOLO(DetectNet):
 
         # input
         X_input = self.X - x_mean
-        is_train = tf.placeholder(tf.bool)
+        is_train = self.is_train
 
         #conv1 - batch_norm1 - leaky_relu1 - pool1
         with tf.variable_scope('layer1'):
@@ -322,7 +320,7 @@ class YOLO(DetectNet):
         d['logit'] = conv_layer(d['leaky_relu22'], 1, 1, output_channel,
                                 padding='SAME', use_bias=True, weights_stddev=0.01, biases_value=0.1)
         d['pred'] = tf.reshape(
-            d['logit'], (-1, self.grid_size, self.grid_size, self.num_anchors, 5 + self.num_classes))
+            d['logit'], (-1, self.grid_size[0], self.grid_size[1], self.num_anchors, 5 + self.num_classes))
         print('pred.shape', d['pred'].get_shape().as_list())
         # (13, 13, 1024) --> (13, 13, num_anchors , (5 + num_classes))
 
@@ -332,19 +330,57 @@ class YOLO(DetectNet):
         """
         Build loss function for the model training.
         :param kwargs: dict, extra arguments
-                - scale: list, [xy, wh, resp_confidence, no_resp_confidence, class_probs]
+                - loss_weights: list, [xy, wh, resp_confidence, no_resp_confidence, class_probs]
         :return tf.Tensor.
         """
 
-        scale = kwargs.pop('scale', [5, 5, 5, 0.5, 1.0])
+        loss_weights = kwargs.pop('loss_weights', [5, 5, 5, 0.5, 1.0])
+        grid_h, grid_w = self.grid_size
+        cxcy = np.transpose([np.tile(np.arange(grid_w), grid_h),
+                             np.repeat(np.arange(grid_h), grid_w)])
+        cxcy = np.reshape(cxcy, (1, grid_size[0], grid_size[1], 1, 2))
 
         txty, twth = self.pred[..., 0:2], self.pred[..., 2:4]
         confidence = tf.sigmoid(self.pred[..., 4:5])
-        class_probs = tf.softmax(self.pred[..., 5:], axis=-1) if num_classes > 1 else tf.sigmoid(self.pred[..., 5:])
-        bxby = tf.sigmoid(txty) + self.cxcy
-        bwbh =
+        class_probs = tf.softmax(
+            self.pred[..., 5:], axis=-1) if num_classes > 1 else tf.sigmoid(self.pred[..., 5:])
+        bxby = tf.sigmoid(txty) + cxcy
+        pwph = np.reshape(anchors, (1, 1, 1, self.num_anchors, 2)) / 32
+        bwbh = tf.exp(twth) * pwph
 
-        # Prepare parameters
+        # for prediction
+        nxny, nwnh = bxby /grid_wh, bwbh / grid_wh
+        nx1ny1, nx2ny2 = nxny - 0.5 * nwnh, nxny + 0.5 * nwnh
+        self.pred_y = tf.concat(nx1ny1, nx2ny2, confidence, class_probs, axis=-1)
+
+        grid_wh = np.reshape([grid_w, grid_h], [
+                             1, 1, 1, 1, 2]).astype(np.float32)
+        gt_bxby = 0.5 * (self.y[..., 0:2] + self.y[..., 2:4]) * grid_wh
+        gt_bwbh = (self.y[..., 2:4] - self.y[..., 0:2]) * grid_wh
+
+        resp_mask = self.y[..., 4:5]
+        no_resp_mask = 1.0 - resp.mask
+        gt_confidence = resp_mask
+        gt_class_probs = self.y[..., 5:]
+
+        loss_bxby = loss_weights[0] * resp_mask * \
+            tf.square(gt_bxby - bxby)
+        loss_bwbh = loss_weights[1] * resp_mask * \
+            tf.square(tf.sqrt(gt_bwbh) - tf.sqrt(bwbh))
+        loss_resp_conf = loss_weights[2] * resp_mask * \
+            tf.square(gt_confidence - confidence)
+        loss_no_resp_conf = loss_weights[3] * resp_mask * \
+            tf.square(gt_confidence - confidence)
+        loss_class_probs = loss_weights[4] * resp_mask * \
+            tf.square(gt_class_probs - class_probs)
+
+        merged_loss = tf.concat(loss_bxby,
+                                loss_bwbh,
+                                loss_resp_conf + loss_no_resp_conf,
+                                loss_class_probs,
+                                axis=-1)
+        total_loss = tf.reduce_sum(merged_loss, axis=-1)
+        total_loss = tf.reduce_mean(total_loss)
 
         return total_loss
 
@@ -355,10 +391,9 @@ class YOLO(DetectNet):
         :param kwargs: dict, extra arguments for prediction.
                 -batch_size: int, batch size for each iteraction.
         :param images: np.ndarray, shape (N, H, W, C)
-        :return bbox_pred: np.ndarray, shape (N, Cell*Cell*num_boxes, 4 + num_classes)
+        :return bbox_pred: np.ndarray, shape (N, grid_h*grid_w*num_anchors, 5 + num_classes)
         """
         batch_size = kwargs.pop('batch_size', 128)
-
         is_batch = len(images.shape) == 4
         if not is_batch:
             images = np.expand_dims(images, 0)
@@ -371,11 +406,11 @@ class YOLO(DetectNet):
                 image = images[i * batch_size:]
             else:
                 image = images[i * batch_size:(i + 1) * batch_size]
-            bbox = sess.run(self.bboxes, feed_dict={self.X: image})
+            bbox = sess.run(self.pred_y, feed_dict={self.X: image, self.is_train: False})
             bbox = np.reshape(bbox, (bbox.shape[0], -1, bbox.shape[-1]))
             bboxes.append(bbox)
-
         bboxes = np.concatenate(bboxes, axis=0)
+
         if is_batch:
             return bboxes
         else:
