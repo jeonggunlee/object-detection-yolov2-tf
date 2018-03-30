@@ -1,7 +1,6 @@
 import os
 import numpy as np
-from skimage.io import imread
-from skimage.transfrom import resize
+from cv2 import imread, resize
 import glob
 import json
 
@@ -22,7 +21,7 @@ def read_data(data_dir, image_size, pixels_per_grid=32):
     anchors_path = os.path.join(data_dir, 'anchors.json')
     class_map = load_json(class_map_path)
     anchors = load_json(anchors_path)
-    num_classes = len(class_map) + 1
+    num_classes = len(class_map)
     grid_h, grid_w = [image_size[i] // pixels_per_grid for i in range(2)]
     im_paths = []
     for ext in IM_EXTENSIONS:
@@ -127,12 +126,31 @@ class DataSet(object):
     def num_examples(self):
         return self._num_examples
 
-    def next_batch(self, batch_size, shuffle=True, is_train=True):
+    def sample_batch(self, batch_size, shuffle=True):
+        """
+        Return sample examples from this dataset.
+        :param batch_size: int, size of a sample batch.
+        :param shuffle: bool, whetehr to shuffle the whole set while sampling a batch.
+        :return: batch_images: np.ndarray, shape: (N, H, W, C)
+                 batch_labels: np.ndarray, shape: (N, g_H, g_W, anchors, 5 + num_classes)
+        """
+
+        if shuffle:
+            indices = np.random.choice(self._num_examples, batch_size)
+        else:
+            indices = np.arange(batch_size)
+        batch_images = self._images[indices]
+        if self._labels is not None:
+            batch_labels = self._labels[indices]
+        else:
+            batch_labels = None
+        return batch_images, batch_labels
+
+    def next_batch(self, batch_size, shuffle=True):
         """
         Return the next 'batch_size' examples from this dataset.
         :param batch_size: int, size of a single batch.
         :param shuffle: bool, whether to shuffle the whole set while sampling a batch.
-        :param is_train: bool, current phase for sampling.
         :return: batch_images: np.ndarray, shape: (N, H, W, C)
                  batch_labels: np.ndarray, shape: (N, g_H, g_W, anchors, 5 + num_classes)
         """
@@ -161,12 +179,12 @@ class DataSet(object):
             end_index = self._index_in_epoch
             indices_new_part = self._indices[start_index:end_index]
 
-            images_rest_part = self.images[indices_rest_part]
-            images_new_part = self.images[indices_new_part]
+            images_rest_part = self._images[indices_rest_part]
+            images_new_part = self._images[indices_new_part]
             batch_images = np.concatenate((images_rest_part, images_new_part), axis=0)
-            if self.labels is not None:
-                labels_rest_part = self.labels[indices_rest_part]
-                labels_new_part = self.labels[indices_new_part]
+            if self._labels is not None:
+                labels_rest_part = self._labels[indices_rest_part]
+                labels_new_part = self._labels[indices_new_part]
                 batch_labels = np.concatenate((labels_rest_part, labels_new_part), axis=0)
             else:
                 batch_labels = None
@@ -174,9 +192,9 @@ class DataSet(object):
             self._index_in_epoch += batch_size
             end_index = self._index_in_epoch
             indices = self._indices[start_index:end_index]
-            batch_images = self.images[indices]
-            if self.labels is not None:
-                batch_labels = self.labels[indices]
+            batch_images = self._images[indices]
+            if self._labels is not None:
+                batch_labels = self._labels[indices]
             else:
                 batch_labels = None
 

@@ -36,11 +36,11 @@ class DetectNet(metaclass=ABCMeta):
     def predict(self, sess, dataset, verbose=False, **kwargs):
         """
         Make predictions for the given dataset.
-        :param ses: tf.Session.
+        :param sess: tf.Session.
         :param dataset: DataSet.
         :param verbose: bool, whether to print details during prediction.
         :param kwargs: dict, extra arguments for prediction.
-                -batch_size: int, batch size for each iteraction.
+                -batch_size: int, batch size for each iteration.
         :return _y_pred: np.ndarray, shape: shape of self.pred
         """
 
@@ -83,14 +83,13 @@ class DetectNet(metaclass=ABCMeta):
 class YOLO(DetectNet):
     """YOLO class"""
 
-    def __init__(self, input_shape, num_classes, anchors, grid_size=(13, 13), **kwargs):
+    def __init__(self, input_shape, num_classes, anchors, **kwargs):
 
-        self.is_train = tf.placeholder(tf.bool)
-        self.y = tf.placeholder(tf.float32, [None] +
-                                [grid_size, grid_size, num_anchors, 5 + num_classes])
-        self.grid_size = gird_size
+        self.grid_size = grid_size = [x//32 for x in input_shape[:2]]
         self.num_anchors = len(anchors)
         self.anchors = anchors
+        self.y = tf.placeholder(tf.float32, [None] +
+                        [self.grid_size[0], self.grid_size[1], self.num_anchors, 5 + num_classes])
         super(YOLO, self).__init__(input_shape, num_classes, **kwargs)
 
     def _build_model(self, **kwargs):
@@ -336,13 +335,17 @@ class YOLO(DetectNet):
 
         loss_weights = kwargs.pop('loss_weights', [5, 5, 5, 0.5, 1.0])
         grid_h, grid_w = self.grid_size
+        num_classes = self.num_classes
+        anchors = self.anchors
+        grid_wh = np.reshape([grid_w, grid_h], [
+                             1, 1, 1, 1, 2]).astype(np.float32)
         cxcy = np.transpose([np.tile(np.arange(grid_w), grid_h),
                              np.repeat(np.arange(grid_h), grid_w)])
-        cxcy = np.reshape(cxcy, (1, grid_size[0], grid_size[1], 1, 2))
+        cxcy = np.reshape(cxcy, (1, grid_h, grid_w, 1, 2))
 
         txty, twth = self.pred[..., 0:2], self.pred[..., 2:4]
         confidence = tf.sigmoid(self.pred[..., 4:5])
-        class_probs = tf.softmax(
+        class_probs = tf.nn.softmax(
             self.pred[..., 5:], axis=-1) if num_classes > 1 else tf.sigmoid(self.pred[..., 5:])
         bxby = tf.sigmoid(txty) + cxcy
         pwph = np.reshape(anchors, (1, 1, 1, self.num_anchors, 2)) / 32
@@ -351,15 +354,25 @@ class YOLO(DetectNet):
         # for prediction
         nxny, nwnh = bxby /grid_wh, bwbh / grid_wh
         nx1ny1, nx2ny2 = nxny - 0.5 * nwnh, nxny + 0.5 * nwnh
-        self.pred_y = tf.concat(nx1ny1, nx2ny2, confidence, class_probs, axis=-1)
+        self.pred_y = tf.concat((nx1ny1, nx2ny2, confidence, class_probs), axis=-1)
 
-        grid_wh = np.reshape([grid_w, grid_h], [
-                             1, 1, 1, 1, 2]).astype(np.float32)
+        # calculating IoU for metric
+        num_objects = tf.reduce_sum(self.y[...,4:5], axis=[1,2,3,4])
+        max_nx1ny1 = tf.maximum(self.y[..., 0:2], nx1ny1)
+        min_nx2ny2 = tf.minimum(self.y[..., 2:4], nx2ny2)
+        intersect_wh = tf.maximum(min_nx2ny2 - max_nx1ny1, 0.0)
+        intersect_area = tf.reduce_prod(intersect_wh, axis=-1)
+        gt_box_area = tf.reduce_prod(self.y[..., 2:4] - self.y[...,0:2], axis=-1)
+        box_area = tf.reduce_prod(nx2ny2 - nx1ny1, axis=-1)
+        iou = tf.truediv(intersect_area, (gt_box_area + box_area - intersect_area))
+        iou = tf.reduce_sum(iou, axis=[1,2,3])
+        self.iou = tf.truediv(iou, num_objects)
+
         gt_bxby = 0.5 * (self.y[..., 0:2] + self.y[..., 2:4]) * grid_wh
         gt_bwbh = (self.y[..., 2:4] - self.y[..., 0:2]) * grid_wh
 
         resp_mask = self.y[..., 4:5]
-        no_resp_mask = 1.0 - resp.mask
+        no_resp_mask = 1.0 - resp_mask
         gt_confidence = resp_mask
         gt_class_probs = self.y[..., 5:]
 
@@ -374,10 +387,12 @@ class YOLO(DetectNet):
         loss_class_probs = loss_weights[4] * resp_mask * \
             tf.square(gt_class_probs - class_probs)
 
-        merged_loss = tf.concat(loss_bxby,
+        merged_loss = tf.concat((
+        						loss_bxby,
                                 loss_bwbh,
                                 loss_resp_conf + loss_no_resp_conf,
-                                loss_class_probs,
+                                loss_class_probs
+                                ),
                                 axis=-1)
         total_loss = tf.reduce_sum(merged_loss, axis=-1)
         total_loss = tf.reduce_mean(total_loss)
@@ -393,7 +408,7 @@ class YOLO(DetectNet):
         :param images: np.ndarray, shape (N, H, W, C)
         :return bbox_pred: np.ndarray, shape (N, grid_h*grid_w*num_anchors, 5 + num_classes)
         """
-        batch_size = kwargs.pop('batch_size', 128)
+        batch_size = kwargs.pop('batch_size', 32)
         is_batch = len(images.shape) == 4
         if not is_batch:
             images = np.expand_dims(images, 0)
