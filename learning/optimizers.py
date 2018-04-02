@@ -2,6 +2,7 @@ import os
 import time
 from abc import abstractmethod, ABCMeta
 import tensorflow as tf
+from learning.utils import plot_learning_curve
 
 class Optimizer(metaclass=ABCMeta):
 	"""Base class for gradient-based optimization algorithms."""
@@ -69,7 +70,7 @@ class Optimizer(metaclass=ABCMeta):
 		X, y_true = self.train_set.next_batch(self.batch_size, shuffle=True)
 		# Compute the loss and make update
 		_, loss, y_pred = \
-			sess.run([self.optimize, self.model.loss, self.model.pred],
+			sess.run([self.optimize, self.model.loss, self.model.pred_y],
 				feed_dict={self.model.X: X, self.model.y: y_true, self.model.is_train: True, self.learning_rate_placeholder: self.curr_learning_rate})
 		return loss, y_true, y_pred, X
 
@@ -81,6 +82,7 @@ class Optimizer(metaclass=ABCMeta):
 		:param details: bool, whether to return detailed results.
 		:param verbose: bool, whether to print details during training.
 		:param kwargs: dict, extra arguments containing training hyperparameters.
+			- nms_flag: bool, whether to do non maximum supression(nms) for evaluation.
 		:return train_results: dict, containing detailed results of training.
 		"""
 		saver = tf.train.Saver()
@@ -103,23 +105,24 @@ class Optimizer(metaclass=ABCMeta):
 			step_loss, step_y_true, step_y_pred, step_X = self._step(sess, **kwargs)
 			step_losses.append(step_loss)
 			# Perform evaluation in the end of each epoch
-			if (i + 1) % num_steps_per_epoch == 0:
+			if (i) % num_steps_per_epoch == 0:
 				# Evaluate model with current minibatch, from training set
-				sample_X, sample_y = self.train_set.sample_batch(20)
-				step_score = self.evaluator.score(sess, self.model, sample_X, sample_y)
+				step_score = self.evaluator.score(step_y_true, step_y_pred, **kwargs)
 				step_scores.append(step_score)
 
 				# If validation set is initially given, use if for evaluation
 				if self.val_set is not None:
 					# Evaluate model with the validation set
-					sample_X, sample_y = self.val_set.sample_batch(20)
-					eval_score = self.evaluator.score(sess, self.model, sample_X, sample_y)
+					eval_y_pred = self.model.predict(sess, self.val_set, verbose=False, **kwargs)
+					eval_score = self.evaluator.score(self.val_set.labels, eval_y_pred, **kwargs)
 					eval_scores.append(eval_score)
 
 					if verbose:
 						# Print intermediate results
 						print('[epoch {}]\tloss: {:.6f} |Train score: {:.6f} |Eval score: {:.6f} |lr: {:.6f}'\
 							.format(self.curr_epoch, step_loss, step_score, eval_score, self.curr_learning_rate))
+						# Plot intermediate results
+						plot_learning_curve(-1, step_losses, step_scores, eval_scores=eval_scores, mode=self.evaluator.mode, img_dir=save_dir)
 
 					curr_score = eval_score
 				else:
@@ -127,6 +130,8 @@ class Optimizer(metaclass=ABCMeta):
 						# Print intermediate results
 						print('[epoch {}]\tloss: {:.6f} |Train score: {:.6f} |lr: {:.6f}'\
 							.format(self.curr_epoch, step_loss, step_score, self.curr_learning_rate))
+						# Plot intermediate results
+						plot_learning_curve(-1, step_losses, step_scores, eval_scores=None, mode=self.evaluator.mode, img_dir=save_dir)
 
 					curr_score = step_score
 
@@ -169,10 +174,11 @@ class MomentumOptimizer(Optimizer):
 		:return tf.Operation.
 		"""
 		momentum = kwargs.pop('momentum', 0.9)
-
+		extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 		update_vars = tf.trainable_variables()
-		return tf.train.MomentumOptimizer(self.learning_rate_placeholder, momentum, use_nesterov=False)\
-		.minimize(self.model.loss, var_list=update_vars)
+		with tf.control_dependencies(extra_update_ops):
+			train_op = tf.train.AdamOptimizer(self.learning_rate_placeholder, momentum).minimize(self.model.loss, var_list=update_vars)
+		return train_op
 
 	def _update_learning_rate(self, **kwargs):
 		"""

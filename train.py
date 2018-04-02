@@ -5,7 +5,7 @@ from datasets import data as dataset
 from models.nn import YOLO as ConvNet
 # from learning.optimizers import MomentumOptimizer as Optimizer
 from learning.optimizers import AdamOptimizer as Optimizer
-from learning.evaluators import IoUEvaluator as Evaluator
+from learning.evaluators import RecallEvaluator as Evaluator
 
 root_dir = os.path.join('data/')
 trainval_dir = os.path.join(root_dir, 'train')
@@ -25,6 +25,7 @@ hp_d['learning_rate_patience'] = 3000000
 hp_d['learning_rate_decay'] = 0.1
 hp_d['eps'] = 1e-8
 hp_d['score_threshold'] = 1e-4
+hp_d['nms_flag'] = True
 
 graph = tf.get_default_graph()
 config = tf.ConfigProto()

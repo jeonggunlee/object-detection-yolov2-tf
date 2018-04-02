@@ -112,7 +112,7 @@ class DataSet(object):
         self._index_in_epoch = 0
 
     @property
-    def image(self):
+    def images(self):
         return self._images
 
     @property

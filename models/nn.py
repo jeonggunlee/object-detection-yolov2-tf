@@ -44,7 +44,7 @@ class DetectNet(metaclass=ABCMeta):
         :return _y_pred: np.ndarray, shape: shape of self.pred
         """
 
-        batch_size = kwargs.pop('batch_size', 64)
+        batch_size = kwargs.pop('batch_size', 16)
 
         num_classes = self.num_classes
         pred_size = dataset.num_examples
@@ -56,17 +56,12 @@ class DetectNet(metaclass=ABCMeta):
         # Start prediction loop
         _y_pred = []
         start_time = time.time()
-        for i in range(num_steps + 1):
-            if i == num_steps:
-                _batch_size = pred_size - num_steps * batch_size
-            else:
-                _batch_size = batch_size
-            X, _ = dataset.next_batch(
-                _batch_size, shuffle=False, is_train=False)
+        for i in range(num_steps):
+            X, _ = dataset.next_batch(batch_size, shuffle=False)
 
             # Compute predictions
             # (N, grid_h, grid_w, 5 + num_classes)
-            y_pred = sess.run(self.pred, feed_dict={
+            y_pred = sess.run(self.pred_y, feed_dict={
                               self.X: X, self.is_train: False})
 
             _y_pred.append(y_pred)
@@ -76,7 +71,6 @@ class DetectNet(metaclass=ABCMeta):
                 time.time() - start_time))
 
         _y_pred = np.concatenate(_y_pred, axis=0)
-
         return _y_pred
 
 
