@@ -45,8 +45,7 @@ def read_data(data_dir, image_size, pixels_per_grid=32):
         # load bboxes and reshape for yolo model
         name = os.path.splitext(os.path.basename(im_path))[0]
         anno_path = os.path.join(anno_dir, '{}.anno'.format(name))
-        with open(anno_path, 'r') as f:
-            anno = json.load(f)
+        anno = load_json(anno_path)
         label = np.zeros((grid_h, grid_w, len(anchors), 5 + num_classes))
         for c_idx, c_name in class_map.items():
             if c_name not in anno:
@@ -69,12 +68,10 @@ def read_data(data_dir, image_size, pixels_per_grid=32):
 
     return X_set, y_set
 
-
 def load_json(json_path):
     with open(json_path, 'r') as f:
         data = json.load(f)
     return data
-
 
 def get_best_anchor(anchors, box_wh):
     box_wh = np.array(box_wh)

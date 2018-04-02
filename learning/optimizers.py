@@ -27,7 +27,6 @@ class Optimizer(metaclass=ABCMeta):
 		self.batch_size = kwargs.pop('batch_size', 8)
 		self.num_epochs = kwargs.pop('num_epochs', 100)
 		self.init_learning_rate = kwargs.pop('init_learning_rate', 0.001)
-
 		self.learning_rate_placeholder = tf.placeholder(tf.float32)
 		self.optimize = self._optimize_op()
 
@@ -68,13 +67,11 @@ class Optimizer(metaclass=ABCMeta):
 
 		# Sample a single batch
 		X, y_true = self.train_set.next_batch(self.batch_size, shuffle=True)
-
 		# Compute the loss and make update
 		_, loss, y_pred = \
 			sess.run([self.optimize, self.model.loss, self.model.pred],
 				feed_dict={self.model.X: X, self.model.y: y_true, self.model.is_train: True, self.learning_rate_placeholder: self.curr_learning_rate})
-
-		return loss, y_true, y_pred
+		return loss, y_true, y_pred, X
 
 	def train(self, sess, save_dir='/tmp', details=False, verbose=True, **kwargs):
 		"""
@@ -103,10 +100,10 @@ class Optimizer(metaclass=ABCMeta):
 		# Start training loop
 		for i in range(num_steps):
 			# Perform a gradient update from a single minibatch
-			step_loss, step_y_true, step_y_pred = self._step(sess, **kwargs)
+			step_loss, step_y_true, step_y_pred, step_X = self._step(sess, **kwargs)
 			step_losses.append(step_loss)
 			# Perform evaluation in the end of each epoch
-			if (i+1) % num_steps_per_epoch == 0:
+			if (i + 1) % num_steps_per_epoch == 0:
 				# Evaluate model with current minibatch, from training set
 				sample_X, sample_y = self.train_set.sample_batch(20)
 				step_score = self.evaluator.score(sess, self.model, sample_X, sample_y)
@@ -201,16 +198,17 @@ class AdamOptimizer(Optimizer):
 
 	def _optimize_op(self, **kwargs):
 		"""
-		tf.train.MomentumOptimizer.minimize Op for a gradient update.
+		tf.train.AdamOptimizer.minimize Op for a gradient update.
 		:param kwargs: dict, extra arguments for optimizer.
 			-momentum: float, the momentum coefficent.
 		:return tf.Operation.
 		"""
 		momentum = kwargs.pop('momentum', 0.9)
-
+		extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 		update_vars = tf.trainable_variables()
-		return tf.train.AdamOptimizer(self.learning_rate_placeholder, momentum)\
-		.minimize(self.model.loss, var_list=update_vars)
+		with tf.control_dependencies(extra_update_ops):
+			train_op = tf.train.AdamOptimizer(self.learning_rate_placeholder, momentum).minimize(self.model.loss, var_list=update_vars)
+		return train_op
 
 	def _update_learning_rate(self, **kwargs):
 		"""
