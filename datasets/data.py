@@ -7,7 +7,7 @@ import json
 IM_EXTENSIONS = ['png', 'jpg', 'bmp']
 
 
-def read_data(data_dir, image_size, pixels_per_grid=32):
+def read_data(data_dir, image_size, pixels_per_grid=32, no_label=False):
     """
     Load the data and preprocessing for YOLO detector
     :param data_dir: str, path to the directory to read. It should include class_map, anchors, annotations
@@ -42,6 +42,9 @@ def read_data(data_dir, image_size, pixels_per_grid=32):
             im = np.concatenate([im, im, im], -1)
         images.append(im)
 
+        if no_label:
+            labels.append(0)
+            continue
         # load bboxes and reshape for yolo model
         name = os.path.splitext(os.path.basename(im_path))[0]
         anno_path = os.path.join(anno_dir, '{}.anno'.format(name))
