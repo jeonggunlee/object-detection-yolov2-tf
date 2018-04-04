@@ -101,12 +101,13 @@ def predict_nms_boxes(input_y, conf_thres=0.2, iou_thres=0.5):
 def cal_recall(gt_bboxes, bboxes, iou_thres=0.5):
     p = 0
     tp = 0
-
     for idx, (gt, bbox) in enumerate(zip(gt_bboxes, bboxes)):
         gt = gt[np.nonzero(np.any(gt > 0, axis=1))]
         bbox = bbox[np.nonzero(np.any(bbox > 0, axis=1))]
-        iou = _cal_overlap(gt, bbox)
         p += len(gt)
+        if bbox.size == 0:
+            continue
+        iou = _cal_overlap(gt, bbox)
         predicted_class = np.argmax(bbox[...,5:], axis=-1)
         for g, area in zip(gt, iou):
             gt_c = np.argmax(g[5:])

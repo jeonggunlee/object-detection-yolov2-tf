@@ -105,7 +105,7 @@ class Optimizer(metaclass=ABCMeta):
 			step_loss, step_y_true, step_y_pred, step_X = self._step(sess, **kwargs)
 			step_losses.append(step_loss)
 			# Perform evaluation in the end of each epoch
-			if (i+1) % num_steps_per_epoch == 0:
+			if (i) % num_steps_per_epoch == 0:
 				# Evaluate model with current minibatch, from training set
 				step_score = self.evaluator.score(step_y_true, step_y_pred, **kwargs)
 				step_scores.append(step_score)
