@@ -49,15 +49,19 @@ class DetectNet(metaclass=ABCMeta):
         num_classes = self.num_classes
         pred_size = dataset.num_examples
         num_steps = pred_size // batch_size
-
+        flag = int(bool(pred_size % batch_size))
         if verbose:
             print('Running prediction loop...')
 
         # Start prediction loop
         _y_pred = []
         start_time = time.time()
-        for i in range(num_steps):
-            X, _ = dataset.next_batch(batch_size, shuffle=False)
+        for i in range(num_steps+flag):
+            if i == num_steps and flag:
+                _batch_size = pred_size - num_steps*batch_size
+            else:
+                _batch_size = batch_size
+            X, _ = dataset.next_batch(_batch_size, shuffle=False)
 
             # Compute predictions
             # (N, grid_h, grid_w, 5 + num_classes)
@@ -347,7 +351,7 @@ class YOLO(DetectNet):
         pwph = np.reshape(anchors, (1, 1, 1, self.num_anchors, 2)) / 32
         bwbh = tf.exp(twth) * pwph
 
-        # for prediction
+        # calculating for prediction
         nxny, nwnh = bxby / grid_wh, bwbh / grid_wh
         nx1ny1, nx2ny2 = nxny - 0.5 * nwnh, nxny + 0.5 * nwnh
         self.pred_y = tf.concat(
@@ -365,15 +369,15 @@ class YOLO(DetectNet):
         box_area = tf.reduce_prod(nx2ny2 - nx1ny1, axis=-1)
         iou = tf.truediv(
             intersect_area, (gt_box_area + box_area - intersect_area))
-        iou = tf.reduce_sum(iou, axis=[1, 2, 3])
-        self.iou = tf.truediv(iou, num_objects)
+        sum_iou = tf.reduce_sum(iou, axis=[1, 2, 3])
+        self.iou = tf.truediv(sum_iou, num_objects)
 
         gt_bxby = 0.5 * (self.y[..., 0:2] + self.y[..., 2:4]) * grid_wh
         gt_bwbh = (self.y[..., 2:4] - self.y[..., 0:2]) * grid_wh
 
         resp_mask = self.y[..., 4:5]
         no_resp_mask = 1.0 - resp_mask
-        gt_confidence = resp_mask
+        gt_confidence = resp_mask * tf.expand_dims(iou, axis=-1)
         gt_class_probs = self.y[..., 5:]
 
         loss_bxby = loss_weights[0] * resp_mask * \
@@ -398,7 +402,6 @@ class YOLO(DetectNet):
         self.merged_loss = merged_loss
         total_loss = tf.reduce_sum(merged_loss, axis=-1)
         total_loss = tf.reduce_mean(total_loss)
-
         return total_loss
 
     def interpret_output(self, sess, images, **kwargs):
