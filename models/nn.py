@@ -9,7 +9,11 @@ class DetectNet(metaclass=ABCMeta):
     """Base class for Convolutional Neural Networks for detection."""
 
     def __init__(self, input_shape, num_classes, **kwargs):
-
+        """
+        model initializer
+        :param input_shape: tuple, shape (H, W, C)
+        :param num_classes: int, total number of classes
+        """
         self.X = tf.placeholder(tf.float32, [None] + input_shape)
         self.is_train = tf.placeholder(tf.bool)
         self.num_classes = num_classes
@@ -56,9 +60,9 @@ class DetectNet(metaclass=ABCMeta):
         # Start prediction loop
         _y_pred = []
         start_time = time.time()
-        for i in range(num_steps+flag):
+        for i in range(num_steps + flag):
             if i == num_steps and flag:
-                _batch_size = pred_size - num_steps*batch_size
+                _batch_size = pred_size - num_steps * batch_size
             else:
                 _batch_size = batch_size
             X, _ = dataset.next_batch(_batch_size, shuffle=False)
@@ -332,7 +336,7 @@ class YOLO(DetectNet):
         """
 
         loss_weights = kwargs.pop('loss_weights', [5, 5, 5, 0.5, 1.0])
-        ### DEBUG
+        # DEBUG
         # loss_weights = kwargs.pop('loss_weights', [1.0, 1.0, 1.0, 1.0, 1.0])
         grid_h, grid_w = self.grid_size
         num_classes = self.num_classes
@@ -363,7 +367,8 @@ class YOLO(DetectNet):
         min_nx2ny2 = tf.minimum(self.y[..., 2:4], nx2ny2)
         intersect_wh = tf.maximum(min_nx2ny2 - max_nx1ny1, 0.0)
         intersect_area = tf.reduce_prod(intersect_wh, axis=-1)
-        intersect_area = tf.where(tf.equal(intersect_area, 0.0), tf.zeros_like(intersect_area), intersect_area)
+        intersect_area = tf.where(
+            tf.equal(intersect_area, 0.0), tf.zeros_like(intersect_area), intersect_area)
         gt_box_area = tf.reduce_prod(
             self.y[..., 2:4] - self.y[..., 0:2], axis=-1)
         box_area = tf.reduce_prod(nx2ny2 - nx1ny1, axis=-1)
@@ -392,47 +397,47 @@ class YOLO(DetectNet):
             tf.square(gt_class_probs - class_probs)
 
         merged_loss = tf.concat((
-            					loss_bxby,
+                                loss_bxby,
                                 loss_bwbh,
                                 loss_resp_conf,
                                 loss_no_resp_conf,
                                 loss_class_probs
                                 ),
                                 axis=-1)
-        self.merged_loss = merged_loss
+        #self.merged_loss = merged_loss
         total_loss = tf.reduce_sum(merged_loss, axis=-1)
         total_loss = tf.reduce_mean(total_loss)
         return total_loss
 
-    def interpret_output(self, sess, images, **kwargs):
-        """
-        Interpret outputs to decode bounding box from y_pred.
-        :param sess: tf.Session
-        :param kwargs: dict, extra arguments for prediction.
-                -batch_size: int, batch size for each iteraction.
-        :param images: np.ndarray, shape (N, H, W, C)
-        :return bbox_pred: np.ndarray, shape (N, grid_h*grid_w*num_anchors, 5 + num_classes)
-        """
-        batch_size = kwargs.pop('batch_size', 32)
-        is_batch = len(images.shape) == 4
-        if not is_batch:
-            images = np.expand_dims(images, 0)
-        pred_size = images.shape[0]
-        num_steps = pred_size // batch_size
+    # def interpret_output(self, sess, images, **kwargs):
+    #     """
+    #     Interpret outputs to decode bounding box from y_pred.
+    #     :param sess: tf.Session
+    #     :param kwargs: dict, extra arguments for prediction.
+    #             -batch_size: int, batch size for each iteraction.
+    #     :param images: np.ndarray, shape (N, H, W, C)
+    #     :return bbox_pred: np.ndarray, shape (N, grid_h*grid_w*num_anchors, 5 + num_classes)
+    #     """
+    #     batch_size = kwargs.pop('batch_size', 32)
+    #     is_batch = len(images.shape) == 4
+    #     if not is_batch:
+    #         images = np.expand_dims(images, 0)
+    #     pred_size = images.shape[0]
+    #     num_steps = pred_size // batch_size
 
-        bboxes = []
-        for i in range(num_steps + 1):
-            if i == num_steps:
-                image = images[i * batch_size:]
-            else:
-                image = images[i * batch_size:(i + 1) * batch_size]
-            bbox = sess.run(self.pred_y, feed_dict={
-                            self.X: image, self.is_train: False})
-            bbox = np.reshape(bbox, (bbox.shape[0], -1, bbox.shape[-1]))
-            bboxes.append(bbox)
-        bboxes = np.concatenate(bboxes, axis=0)
+    #     bboxes = []
+    #     for i in range(num_steps + 1):
+    #         if i == num_steps:
+    #             image = images[i * batch_size:]
+    #         else:
+    #             image = images[i * batch_size:(i + 1) * batch_size]
+    #         bbox = sess.run(self.pred_y, feed_dict={
+    #                         self.X: image, self.is_train: False})
+    #         bbox = np.reshape(bbox, (bbox.shape[0], -1, bbox.shape[-1]))
+    #         bboxes.append(bbox)
+    #     bboxes = np.concatenate(bboxes, axis=0)
 
-        if is_batch:
-            return bboxes
-        else:
-            return bboxes[0]
+    #     if is_batch:
+    #         return bboxes
+    #     else:
+    #         return bboxes[0]

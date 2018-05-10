@@ -82,8 +82,13 @@ def conv_layer(x, side_l, stride, out_depth, padding='SAME', use_bias=True, **kw
         return conv2d(x, filters, stride, padding=padding)
 
 def batchNormalization(x, is_train):
+    """
+    Add a new batchNormalization layer.
+    :param x: tf.Tensor, shape: (N, H, W, C) or (N, D)
+    :param is_train: tf.placeholder(bool), if True, train mode, else, test mode
+    :return: tf.Tensor.
+    """
     return tf.layers.batch_normalization(x, training=is_train, momentum=0.99, epsilon=0.001, center=True, scale=True)
-    # return tf.keras.layers.BatchNormalization()(x, training=is_train)
 
 def fc_layer(x, out_dim, **kwargs):
     """
