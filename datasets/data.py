@@ -13,6 +13,7 @@ def read_data(data_dir, image_size, pixels_per_grid=32, no_label=False):
     :param data_dir: str, path to the directory to read. It should include class_map, anchors, annotations
     :image_size: tuple, image size for resizing images
     :pixels_per_gird: int, the actual size of a grid
+    :no_label: bool, whetehr to load labels
     :return: X_set: np.ndarray, shape: (N, H, W, C).
              y_set: np.ndarray, shape: (N, g_H, g_W, anchors, 5 + num_classes).
     """
@@ -27,7 +28,6 @@ def read_data(data_dir, image_size, pixels_per_grid=32, no_label=False):
     for ext in IM_EXTENSIONS:
         im_paths.extend(glob.glob(os.path.join(im_dir, '*.{}'.format(ext))))
     anno_dir = os.path.join(data_dir, 'annotations')
-
     images = []
     labels = []
 
@@ -36,7 +36,7 @@ def read_data(data_dir, image_size, pixels_per_grid=32, no_label=False):
         im = imread(im_path)
         im = np.array(im, dtype=np.float32)
         im_origina_sizes = im.shape[:2]
-        im = resize(im, image_size)
+        im = resize(im, (image_size[1], image_size[0]))
         if len(im.shape) == 2:
             im = np.expand_dims(im, 2)
             im = np.concatenate([im, im, im], -1)
@@ -55,7 +55,10 @@ def read_data(data_dir, image_size, pixels_per_grid=32, no_label=False):
                 continue
             for x_min, y_min, x_max, y_max in anno[c_name]:
                 oh, ow = im_origina_sizes
+                # normalize object coordinates and clip the values
                 x_min, y_min, x_max, y_max = x_min / ow, y_min / oh, x_max / ow, y_max / oh
+                x_min, y_min, x_max, y_max = np.clip([x_min, y_min, x_max, y_max], 0, 1)
+                # assign the values to the best anchor
                 anchor_boxes = np.array(anchors) / np.array([ow, oh])
                 best_anchor = get_best_anchor(
                     anchor_boxes, [x_max - x_min, y_max - y_min])
@@ -71,12 +74,20 @@ def read_data(data_dir, image_size, pixels_per_grid=32, no_label=False):
 
     return X_set, y_set
 
+
 def load_json(json_path):
+    """
+    Load json file
+    """
     with open(json_path, 'r') as f:
         data = json.load(f)
     return data
 
+
 def get_best_anchor(anchors, box_wh):
+    """
+    Select the best anchor with highest IOU
+    """
     box_wh = np.array(box_wh)
     best_iou = 0
     best_anchor = 0
@@ -105,8 +116,9 @@ class DataSet(object):
                 ('Number of examples mismatch, between images and labels')
         self._num_examples = images.shape[0]
         self._images = images
-        self._labels = labels # NOTE: this can be None, if not given.
-        self._indices = np.arange(self._num_examples, dtype=np.uint) # image/label indices(can be permuted)
+        self._labels = labels  # NOTE: this can be None, if not given.
+        # image/label indices(can be permuted)
+        self._indices = np.arange(self._num_examples, dtype=np.uint)
         self._reset()
 
     def _reset(self):
@@ -130,7 +142,7 @@ class DataSet(object):
         """
         Return sample examples from this dataset.
         :param batch_size: int, size of a sample batch.
-        :param shuffle: bool, whetehr to shuffle the whole set while sampling a batch.
+        :param shuffle: bool, whether to shuffle the whole set while sampling a batch.
         :return: batch_images: np.ndarray, shape: (N, H, W, C)
                  batch_labels: np.ndarray, shape: (N, g_H, g_W, anchors, 5 + num_classes)
         """
@@ -161,7 +173,8 @@ class DataSet(object):
         if self._epochs_completed == 0 and start_index == 0 and shuffle:
             np.random.shuffle(self._indices)
 
-        # Go to the next epoch, if current index goes beyond the total number of examples
+        # Go to the next epoch, if current index goes beyond the total number
+        # of examples
         if start_index + batch_size > self._num_examples:
             # Increment the number of epochs completed
             self._epochs_completed += 1
@@ -181,11 +194,13 @@ class DataSet(object):
 
             images_rest_part = self._images[indices_rest_part]
             images_new_part = self._images[indices_new_part]
-            batch_images = np.concatenate((images_rest_part, images_new_part), axis=0)
+            batch_images = np.concatenate(
+                (images_rest_part, images_new_part), axis=0)
             if self._labels is not None:
                 labels_rest_part = self._labels[indices_rest_part]
                 labels_new_part = self._labels[indices_new_part]
-                batch_labels = np.concatenate((labels_rest_part, labels_new_part), axis=0)
+                batch_labels = np.concatenate(
+                    (labels_rest_part, labels_new_part), axis=0)
             else:
                 batch_labels = None
         else:
