@@ -7,10 +7,10 @@ from learning.utils import draw_pred_boxes, predict_nms_boxes, convert_boxes
 import cv2
 
 """ 1. Load dataset """
-root_dir = os.path.join('data/bubble')
+root_dir = os.path.join('data/face')
 test_dir = os.path.join(root_dir, 'test')
 
-IM_SIZE = (640, 640)
+IM_SIZE = (416, 416)
 NUM_CLASS = 1
 
 # Load test set
@@ -54,5 +54,5 @@ for idx, (img, y_pred) in enumerate(zip(test_set.images, test_y_pred)):
     else:
         bboxes = convert_boxes(y_pred)
     bboxes = bboxes[np.nonzero(np.any(bboxes > 0, axis=1))]
-    boxed_img = draw_pred_boxes(img, bboxes, class_map)
+    boxed_img = draw_pred_boxes(img, bboxes, class_map, score=True)
     cv2.imwrite(draw_path, boxed_img)
