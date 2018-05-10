@@ -116,6 +116,31 @@ def cal_recall(gt_bboxes, bboxes, iou_thres=0.5):
                 tp += 1
     return tp / p
 
+def cal_F1(gt_bboxes, bboxes, iou_thres=0.5):
+    p = 0
+    tp = 0
+    pp = 0
+    for idx, (gt, bbox) in enumerate(zip(gt_bboxes, bboxes)):
+        gt = gt[np.nonzero(np.any(gt > 0, axis=1))]
+        bbox = bbox[np.nonzero(np.any(bbox > 0, axis=1))]
+        p += len(gt)
+        pp += len(bbox)
+        if bbox.size == 0:
+            continue
+        iou = _cal_overlap(gt, bbox)
+        predicted_class = np.argmax(bbox[...,5:], axis=-1)
+        for g, area in zip(gt, iou):
+            gt_c = np.argmax(g[5:])
+            idx = np.argmax(area)
+            if np.max(area) > iou_thres and predicted_class[idx] == gt_c:
+                tp += 1
+    recall = tp / p
+    precision = tp / pp
+
+    f1 = 2*precision*recall / (precision + recall)
+
+    return f1
+
 def _cal_overlap(a, b):
     area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
 

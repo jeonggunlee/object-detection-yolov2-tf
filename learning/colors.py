@@ -1,3 +1,6 @@
+"""
+color map for drawing boxes
+"""
 COLORS = [(100, 72, 247),
  (232, 237, 157),
  (45, 241, 42),

@@ -45,7 +45,7 @@ class Evaluator(metaclass=ABCMeta):
         pass
 
 class RecallEvaluator(Evaluator):
-    """ Evaluaotr with Recall metric."""
+    """ Evaluator with Recall metric."""
 
     @property
     def worst_score(self):
