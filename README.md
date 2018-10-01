@@ -1,5 +1,5 @@
-# object-detection-yolov2
-Object-detection-tutorials with YOLOv2
+# object-detection-yolov2-tensorflow
+Object-detection-tutorials with YOLOv2 (Tensorflow)
 
 # Contributor
 - Jongho Park
