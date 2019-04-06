@@ -1,6 +1,9 @@
 # object-detection-yolov2-tensorflow
 Object-detection-tutorials with YOLOv2 (Tensorflow)
 
+## Some more details
+- http://research.sualab.com/practice/2018/05/14/image-detection-deep-learning.html
+
 # Contributor
 - Jongho Park
 - Jongsoo Keum
